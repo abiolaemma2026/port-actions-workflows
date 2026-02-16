@@ -41,18 +41,35 @@ jobs:
         id: create_repo
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPO_NAME: ${{ github.event.inputs.repo_name }}
+          DESCRIPTION: ${{ github.event.inputs.description }}
+          IS_PRIVATE: ${{ github.event.inputs.private }}
+          AUTO_INIT: ${{ github.event.inputs.auto_init }}
         run: |
-          echo "Creating repository: ${{ github.event.inputs.repo_name }}"
+          echo "Creating repository: $REPO_NAME"
+          
+          # Convert string booleans to actual booleans for JSON
+          if [ "$IS_PRIVATE" = "true" ]; then
+            PRIVATE_VALUE="true"
+          else
+            PRIVATE_VALUE="false"
+          fi
+          
+          if [ "$AUTO_INIT" = "true" ]; then
+            AUTO_INIT_VALUE="true"
+          else
+            AUTO_INIT_VALUE="false"
+          fi
           
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/orgs/abiolaemma2026/repos \
             -d "{
-              \"name\": \"${{ github.event.inputs.repo_name }}\",
-              \"description\": \"${{ github.event.inputs.description }}\",
-              \"private\": ${{ github.event.inputs.private }},
-              \"auto_init\": ${{ github.event.inputs.auto_init }}
+              \"name\": \"$REPO_NAME\",
+              \"description\": \"$DESCRIPTION\",
+              \"private\": $PRIVATE_VALUE,
+              \"auto_init\": $AUTO_INIT_VALUE
             }")
           
           REPO_URL=$(echo "$RESPONSE" | jq -r '.html_url // empty')
