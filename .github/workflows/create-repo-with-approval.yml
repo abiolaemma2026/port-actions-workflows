@@ -1,20 +1,20 @@
-name: Create GitHub Repo with Approval (Simple)
+name: Create GitHub Repo with Approval
 
 on:
   workflow_dispatch:
     inputs:
-      repository_name:
+      repo_name:
         required: true
         type: string
       description:
         required: false
         type: string
         default: "Created via Port"
-      private_repository:
+      private:
         required: false
         type: boolean
         default: false
-      auto_initialize_with_readm:
+      auto_init:
         required: false
         type: boolean
         default: true
@@ -35,28 +35,30 @@ jobs:
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
           operation: PATCH_RUN
           runId: ${{ fromJson(github.event.inputs.port_context).runId }}
-          logMessage: "Starting repository creation"
+          logMessage: "Starting repository creation after approval"
 
       - name: Create Repository
         id: create_repo
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
+          echo "Creating repository: ${{ github.event.inputs.repo_name }}"
+          
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/orgs/abiolaemma2026/repos \
             -d "{
-              \"name\": \"${{ github.event.inputs.repository_name }}\",
+              \"name\": \"${{ github.event.inputs.repo_name }}\",
               \"description\": \"${{ github.event.inputs.description }}\",
-              \"private\": ${{ github.event.inputs.private_repository }},
-              \"auto_init\": ${{ github.event.inputs.auto_initialize_with_readm }}
+              \"private\": ${{ github.event.inputs.private }},
+              \"auto_init\": ${{ github.event.inputs.auto_init }}
             }")
           
           REPO_URL=$(echo "$RESPONSE" | jq -r '.html_url // empty')
           
           if [ -n "$REPO_URL" ]; then
-            echo "Repository created: $REPO_URL"
+            echo "Repository created successfully: $REPO_URL"
             echo "repo_url=$REPO_URL" >> $GITHUB_OUTPUT
           else
             echo "Failed to create repository"
@@ -80,11 +82,11 @@ jobs:
           clientId: ${{ secrets.PORT_CLIENT_ID }}
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
           operation: UPSERT
-          identifier: ${{ github.event.inputs.repository_name }}
+          identifier: ${{ github.event.inputs.repo_name }}
           blueprint: githubRepository
           properties: |
             {
-              "name": "${{ github.event.inputs.repository_name }}",
+              "name": "${{ github.event.inputs.repo_name }}",
               "description": "${{ github.event.inputs.description }}",
               "url": "${{ steps.create_repo.outputs.repo_url }}"
             }
