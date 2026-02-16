@@ -3,18 +3,18 @@ name: Create GitHub Repo with Approval (Simple)
 on:
   workflow_dispatch:
     inputs:
-      repo_name:
+      repository_name:
         required: true
         type: string
       description:
         required: false
         type: string
         default: "Created via Port"
-      private:
+      private_repository:
         required: false
         type: boolean
         default: false
-      auto_init:
+      auto_initialize_with_readm:
         required: false
         type: boolean
         default: true
@@ -47,10 +47,10 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/orgs/abiolaemma2026/repos \
             -d "{
-              \"name\": \"${{ github.event.inputs.repo_name }}\",
+              \"name\": \"${{ github.event.inputs.repository_name }}\",
               \"description\": \"${{ github.event.inputs.description }}\",
-              \"private\": ${{ github.event.inputs.private }},
-              \"auto_init\": ${{ github.event.inputs.auto_init }}
+              \"private\": ${{ github.event.inputs.private_repository }},
+              \"auto_init\": ${{ github.event.inputs.auto_initialize_with_readm }}
             }")
           
           REPO_URL=$(echo "$RESPONSE" | jq -r '.html_url // empty')
@@ -80,11 +80,11 @@ jobs:
           clientId: ${{ secrets.PORT_CLIENT_ID }}
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
           operation: UPSERT
-          identifier: ${{ github.event.inputs.repo_name }}
+          identifier: ${{ github.event.inputs.repository_name }}
           blueprint: githubRepository
           properties: |
             {
-              "name": "${{ github.event.inputs.repo_name }}",
+              "name": "${{ github.event.inputs.repository_name }}",
               "description": "${{ github.event.inputs.description }}",
               "url": "${{ steps.create_repo.outputs.repo_url }}"
             }
