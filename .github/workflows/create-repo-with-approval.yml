@@ -1,234 +1,73 @@
-name: Create GitHub Repo with Jira Approval
+name: Create Repo with Jira Approval
 
 on:
   workflow_dispatch:
     inputs:
+      jira_issue_key:
+        required: true
+        type: string
       repo_name:
-        description: 'Repository name'
         required: true
         type: string
-      description:
-        description: 'Repository description'
+      port_run_id:
         required: false
-        type: string
-      private:
-        description: 'Private repository'
-        required: false
-        type: boolean
-        default: false
-      auto_init:
-        description: 'Initialize with README'
-        required: false
-        type: boolean
-        default: true
-      port_context:
-        required: true
         type: string
 
 jobs:
-  create-jira-approval-ticket:
+  wait-and-create:
     runs-on: ubuntu-latest
-    outputs:
-      jira_issue_key: ${{ steps.create_jira_ticket.outputs.issue_key }}
-      jira_issue_url: ${{ steps.create_jira_ticket.outputs.issue_url }}
-    
     steps:
-      - name: Inform Port - Creating Jira Approval Ticket
-        uses: port-labs/port-github-action@v1
-        with:
-          clientId: ${{ secrets.PORT_CLIENT_ID }}
-          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
-          operation: PATCH_RUN
-          runId: ${{ fromJson(inputs.port_context).runId }}
-          logMessage: |
-            Creating Jira approval ticket for repository: ${{ inputs.repo_name }} 🎫
-
-      - name: Create Jira Approval Ticket
-        id: create_jira_ticket
+      - name: Wait for Jira Approval
+        id: wait
         run: |
-          RESPONSE=$(curl -X POST "${{ secrets.JIRA_BASE_URL }}/rest/api/2/issue" \
-            -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "fields": {
-                "project": {
-                  "key": "${{ secrets.JIRA_PROJECT_KEY }}"
-                },
-                "summary": "Approval Request: Create GitHub Repository - ${{ inputs.repo_name }}",
-                "description": "Repository Creation Request
-\n*Repository Name:* ${{ inputs.repo_name }}
-*Description:* ${{ inputs.description }}
-*Private:* ${{ inputs.private }}
-*Auto Initialize:* ${{ inputs.auto_init }}
-
-*Action:* Please review and approve this repository creation request.
-
-*To Approve:* Move this ticket to DONE status",
-                "issuetype": {
-                  "name": "Task"
-                },
-                "priority": {
-                  "name": "Medium"
-                }
-              }
-            }')
-          
-          ISSUE_KEY=$(echo $RESPONSE | jq -r '.key')
-          ISSUE_ID=$(echo $RESPONSE | jq -r '.id')
-          ISSUE_URL="${{ secrets.JIRA_BASE_URL }}/browse/${ISSUE_KEY}"
-          
-          echo "issue_key=${ISSUE_KEY}" >> $GITHUB_OUTPUT
-          echo "issue_url=${ISSUE_URL}" >> $GITHUB_OUTPUT
-          echo "issue_id=${ISSUE_ID}" >> $GITHUB_OUTPUT
-
-      - name: Inform Port - Jira Ticket Created
-        uses: port-labs/port-github-action@v1
-        with:
-          clientId: ${{ secrets.PORT_CLIENT_ID }}
-          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
-          operation: PATCH_RUN
-          runId: ${{ fromJson(inputs.port_context).runId }}
-          link: ${{ steps.create_jira_ticket.outputs.issue_url }}
-          logMessage: |
-            ✅ Jira approval ticket created: ${{ steps.create_jira_ticket.outputs.issue_key }}
-            Waiting for approval...
-
-  wait-for-approval:
-    runs-on: ubuntu-latest
-    needs: create-jira-approval-ticket
-    outputs:
-      approval_status: ${{ steps.check_approval.outputs.status }}
-      
-    steps:
-      - name: Poll Jira Ticket Status
-        id: check_approval
-        run: |
-          ISSUE_KEY="${{ needs.create-jira-approval-ticket.outputs.jira_issue_key }}"
-          MAX_ATTEMPTS=60
-          ATTEMPT=0
-          
-          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            echo "Checking approval status (attempt $((ATTEMPT + 1))/$MAX_ATTEMPTS)..."
+          for i in {1..60}; do
+            STATUS=$(curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              "${{ secrets.JIRA_BASE_URL }}/rest/api/3/issue/${{ inputs.jira_issue_key }}" \
+              | jq -r '.fields.status.name')
             
-            RESPONSE=$(curl -s -X GET "${{ secrets.JIRA_BASE_URL }}/rest/api/2/issue/${ISSUE_KEY}" \
-              -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
-              -H "Content-Type: application/json")
+            echo "Check $i: Status = $STATUS"
             
-            STATUS=$(echo $RESPONSE | jq -r '.fields.status.name')
-            echo "Current status: $STATUS"
-            
-            # Check if approved - CUSTOMIZED for your Jira (TO DO, IN PROGRESS, IN REVIEW, DONE)
-            if [[ "$STATUS" == "DONE" || "$STATUS" == "Done" ]]; then
-              echo "status=approved" >> $GITHUB_OUTPUT
-              echo "✅ Request approved!"
+            if [[ "$STATUS" == "Done" ]]; then
+              echo "approved=true" >> $GITHUB_OUTPUT
               exit 0
-            fi
-            
-            # Check if rejected (optional - if you add a rejection status later)
-            if [[ "$STATUS" == "Rejected" || "$STATUS" == "Cancelled" ]]; then
-              echo "status=rejected" >> $GITHUB_OUTPUT
-              echo "❌ Request rejected!"
+            elif [[ "$STATUS" == "Rejected" ]]; then
+              echo "approved=false" >> $GITHUB_OUTPUT
               exit 0
             fi
             
             sleep 30
-            ATTEMPT=$((ATTEMPT + 1))
           done
           
-          echo "status=timeout" >> $GITHUB_OUTPUT
-          echo "⏱️ Approval timeout reached"
+          echo "Timeout"
           exit 1
 
-      - name: Update Port - Approval Status
-        if: always()
-        uses: port-labs/port-github-action@v1
-        with:
-          clientId: ${{ secrets.PORT_CLIENT_ID }}
-          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
-          operation: PATCH_RUN
-          runId: ${{ fromJson(inputs.port_context).runId }}
-          link: ${{ needs.create-jira-approval-ticket.outputs.jira_issue_url }}
-          logMessage: |
-            ${{ steps.check_approval.outputs.status == 'approved' && '✅ Request approved! Proceeding with repository creation...' || steps.check_approval.outputs.status == 'rejected' && '❌ Request rejected. Repository will not be created.' || '⏱️ Approval timeout. Please check the Jira ticket.' }}
-
-  create-repository:
-    runs-on: ubuntu-latest
-    needs: [create-jira-approval-ticket, wait-for-approval]
-    if: needs.wait-for-approval.outputs.approval_status == 'approved'
-    
-    steps:
-      - name: Inform Port - Creating Repository
-        uses: port-labs/port-github-action@v1
-        with:
-          clientId: ${{ secrets.PORT_CLIENT_ID }}
-          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
-          operation: PATCH_RUN
-          runId: ${{ fromJson(inputs.port_context).runId }}
-          logMessage: |
-            Creating GitHub repository: ${{ inputs.repo_name }} 🚀
-
-      - name: Create GitHub Repository
-        id: create_repo
+      - name: Create Repo
+        if: steps.wait.outputs.approved == 'true'
         run: |
-          RESPONSE=$(curl -X POST \
+          curl -X POST \
             -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/orgs/${{ github.repository_owner }}/repos \
-            -d '{
-              "name": "${{ inputs.repo_name }}",
-              "description": "${{ inputs.description }}",
-              "private": ${{ inputs.private }},
-              "auto_init": ${{ inputs.auto_init }}
-            }')
-          
-          REPO_URL=$(echo $RESPONSE | jq -r '.html_url')
-          echo "repo_url=${REPO_URL}" >> $GITHUB_OUTPUT
+            https://api.github.com/orgs/abiolaemma2026/repos \
+            -d '{"name":"${{ inputs.repo_name }}","private":false,"auto_init":true}'
 
-      - name: Update Port - Repository Created
-        uses: port-labs/port-github-action@v1
-        with:
-          clientId: ${{ secrets.PORT_CLIENT_ID }}
-          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
-          operation: PATCH_RUN
-          runId: ${{ fromJson(inputs.port_context).runId }}
-          link: ${{ steps.create_repo.outputs.repo_url }}
-          logMessage: |
-            ✅ Repository created successfully!
-            Repository URL: ${{ steps.create_repo.outputs.repo_url }}
-
-      - name: Update Jira Ticket - Repository Created
+      - name: Report to Port
+        if: always() && inputs.port_run_id != ''
         run: |
-          curl -X POST "${{ secrets.JIRA_BASE_URL }}/rest/api/2/issue/${{ needs.create-jira-approval-ticket.outputs.jira_issue_key }}/comment" \
-            -H "Authorization: Bearer ${{ secrets.JIRA_API_TOKEN }}" \
+          TOKEN=$(curl -s -X POST https://api.getport.io/v1/auth/access_token \
             -H "Content-Type: application/json" \
-            -d '{
-              "body": "✅ GitHub repository has been created successfully!
-\nRepository: ${{ steps.create_repo.outputs.repo_url }}
-
-Port Run: https://app.getport.io/organization/run?runId=${{ fromJson(inputs.port_context).runId }}"
-            }'
-
-  handle-rejection:
-    runs-on: ubuntu-latest
-    needs: [create-jira-approval-ticket, wait-for-approval]
-    if: needs.wait-for-approval.outputs.approval_status == 'rejected'
-    
-    steps:
-      - name: Report Rejection to Port
-        uses: port-labs/port-github-action@v1
-        with:
-          clientId: ${{ secrets.PORT_CLIENT_ID }}
-          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
-          operation: PATCH_RUN
-          runId: ${{ fromJson(inputs.port_context).runId }}
-          link: ${{ needs.create-jira-approval-ticket.outputs.jira_issue_url }}
-          logMessage: |
-            ❌ Repository creation request was rejected.
-            No further action will be taken.
-            
-            Jira Ticket: ${{ needs.create-jira-approval-ticket.outputs.jira_issue_key }}
-
-      - name: Fail the workflow
-        run: |
-          echo "Repository creation was rejected by approver"
-          exit 1
+            -d '{"clientId":"${{ secrets.PORT_CLIENT_ID }}","clientSecret":"${{ secrets.PORT_CLIENT_SECRET }}"}' \
+            | jq -r '.accessToken')
+          
+          if [ "${{ steps.wait.outputs.approved }}" == "true" ]; then
+            MSG="✅ Approved and created"
+            STATUS="SUCCESS"
+          else
+            MSG="❌ Rejected"
+            STATUS="FAILURE"
+          fi
+          
+          curl -X PATCH \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"$STATUS\",\"message\":\"$MSG\"}" \
+            "https://api.getport.io/v1/actions/runs/${{ inputs.port_run_id }}"
