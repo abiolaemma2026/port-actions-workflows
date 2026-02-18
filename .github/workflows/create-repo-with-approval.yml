@@ -56,14 +56,14 @@ jobs:
                 },
                 "summary": "Approval Request: Create GitHub Repository - ${{ inputs.repo_name }}",
                 "description": "Repository Creation Request
-
-*Repository Name:* ${{ inputs.repo_name }}
+\n*Repository Name:* ${{ inputs.repo_name }}
 *Description:* ${{ inputs.description }}
 *Private:* ${{ inputs.private }}
 *Auto Initialize:* ${{ inputs.auto_init }}
-\n*Action:* Please review and approve/reject this repository creation request.\n
-*To Approve:* Transition this ticket to \"Approved\" status
-*To Reject:* Transition this ticket to \"Rejected\" status",
+
+*Action:* Please review and approve this repository creation request.
+
+*To Approve:* Move this ticket to DONE status",
                 "issuetype": {
                   "name": "Task"
                 },
@@ -104,7 +104,7 @@ jobs:
         id: check_approval
         run: |
           ISSUE_KEY="${{ needs.create-jira-approval-ticket.outputs.jira_issue_key }}"
-          MAX_ATTEMPTS=60  # Poll for 30 minutes (60 attempts * 30 seconds)
+          MAX_ATTEMPTS=60
           ATTEMPT=0
           
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
@@ -117,26 +117,24 @@ jobs:
             STATUS=$(echo $RESPONSE | jq -r '.fields.status.name')
             echo "Current status: $STATUS"
             
-            # Check if approved (customize these status names to match your Jira workflow)
-            if [[ "$STATUS" == "Approved" || "$STATUS" == "Done" || "$STATUS" == "Closed" ]]; then
+            # Check if approved - CUSTOMIZED for your Jira (TO DO, IN PROGRESS, IN REVIEW, DONE)
+            if [[ "$STATUS" == "DONE" || "$STATUS" == "Done" ]]; then
               echo "status=approved" >> $GITHUB_OUTPUT
               echo "✅ Request approved!"
               exit 0
             fi
             
-            # Check if rejected
+            # Check if rejected (optional - if you add a rejection status later)
             if [[ "$STATUS" == "Rejected" || "$STATUS" == "Cancelled" ]]; then
               echo "status=rejected" >> $GITHUB_OUTPUT
               echo "❌ Request rejected!"
               exit 0
             fi
             
-            # Wait 30 seconds before next check
             sleep 30
             ATTEMPT=$((ATTEMPT + 1))
           done
           
-          # Timeout reached
           echo "status=timeout" >> $GITHUB_OUTPUT
           echo "⏱️ Approval timeout reached"
           exit 1
@@ -205,8 +203,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{
               "body": "✅ GitHub repository has been created successfully!
-
-Repository: ${{ steps.create_repo.outputs.repo_url }}
+\nRepository: ${{ steps.create_repo.outputs.repo_url }}
 
 Port Run: https://app.getport.io/organization/run?runId=${{ fromJson(inputs.port_context).runId }}"
             }'
