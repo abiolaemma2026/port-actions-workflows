@@ -28,8 +28,8 @@ jobs:
             echo "Check $i: Status = $STATUS"
             
             # Approved - create repo
-            if [[ "$STATUS" == "DONE" ]]; then
-              echo "✅ Jira ticket approved (Status: DONE)"
+            if [[ "$STATUS" == "Done" ]]; then
+              echo "✅ Jira ticket approved (Status: Done)"
               echo "approved=true" >> $GITHUB_OUTPUT
               exit 0
             fi
