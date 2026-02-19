@@ -16,11 +16,14 @@ jobs:
   main:
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Create Jira Ticket
+      # Step 1: Create Jira Ticket (with better error handling)
       - name: Create Jira Ticket
         id: jira
         run: |
-          RESPONSE=$(curl -s -X POST \
+          echo "Creating Jira ticket for repo: ${{ inputs.repo_name }}"
+          
+          RESPONSE=$(curl -s -w "
+%{http_code}" -X POST \
             "${{ secrets.JIRA_BASE_URL }}/rest/api/3/issue" \
             -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
             -H "Content-Type: application/json" \
@@ -36,59 +39,38 @@ jobs:
                     "type": "paragraph",
                     "content": [{
                       "type": "text",
-                      "text": "Repository: ${{ inputs.repo_name }}\nMove to Done to approve."
+                      "text": "Repository: ${{ inputs.repo_name }}
+\nTO APPROVE: Move to Done
+TO REJECT: Move to Rejected"
                     }]
                   }]
                 }
               }
             }')
           
-          KEY=$(echo "$RESPONSE" | jq -r '.key')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" -ne 201 ]; then
+            echo "❌ Failed to create Jira ticket!"
+            echo "$BODY" | jq '.'
+            exit 1
+          fi
+          
+          KEY=$(echo "$BODY" | jq -r '.key')
+          
+          if [ -z "$KEY" ] || [ "$KEY" = "null" ]; then
+            echo "❌ Failed to extract Jira key!"
+            exit 1
+          fi
+          
           echo "key=$KEY" >> $GITHUB_OUTPUT
-          echo "Created Jira: $KEY"
+          echo "✅ Created Jira ticket: $KEY"
 
-      # Step 2: Wait for Approval (checks every minute for 30 minutes)
-      - name: Wait for Approval
-        run: |
-          for i in {1..30}; do
-            STATUS=$(curl -s \
-              "${{ secrets.JIRA_BASE_URL }}/rest/api/3/issue/${{ steps.jira.outputs.key }}?fields=status" \
-              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
-              | jq -r '.fields.status.name')
-            
-            echo "[$i/30] Status: $STATUS"
-            
-            if [ "$STATUS" = "Done" ]; then
-              echo "✅ Approved!"
-              exit 0
-            fi
-            
-            sleep 60
-          done
-          
-          echo "❌ Timeout - no approval"
-          exit 1
-
-      # Step 3: Create GitHub Repo (only runs if approved)
-      - name: Create GitHub Repo
-        id: repo
-        run: |
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
-            https://api.github.com/orgs/abiolaemma2026/repos \
-            -d '{
-            "name": "${{ inputs.repo_name }}",
-            "description": "${{ inputs.repo_description }}",
-            "private": ${{ inputs.private }},
-            "auto_init": true
-            }' | tee response.json
-          
-          URL=$(jq -r '.html_url' response.json)
-          echo "url=$URL" >> $GITHUB_OUTPUT
-          echo "✅ Created: $URL"
-
-      # Step 4: Report to Port
-      - name: Update Port
+      - name: Report Jira Created
         uses: port-labs/port-github-action@v1
         with:
           clientId: ${{ secrets.PORT_CLIENT_ID }}
@@ -96,5 +78,161 @@ jobs:
           operation: PATCH_RUN
           runId: ${{ inputs.port_run_id }}
           logMessage: |
-            ✅ Repository created: ${{ steps.repo.outputs.url }}
-            🎫 Jira ticket: ${{ steps.jira.outputs.key }}
+            🎫 Jira ticket created: ${{ steps.jira.outputs.key }}
+            🔗 View: ${{ secrets.JIRA_BASE_URL }}/browse/${{ steps.jira.outputs.key }}
+            
+            ⏳ Waiting for approval...
+            ✅ To approve: Move ticket to "Done"
+            ❌ To reject: Move ticket to "Rejected"
+      # Step 2: Wait for Decision
+      - name: Wait for Decision
+        id: decision
+        run: |
+          ISSUE_KEY="${{ steps.jira.outputs.key }}"
+          
+          if [ -z "$ISSUE_KEY" ] || [ "$ISSUE_KEY" = "null" ]; then
+            echo "❌ No Jira issue key available!"
+            exit 1
+          fi
+          
+          echo "Monitoring Jira ticket: $ISSUE_KEY"
+          
+          for i in {1..30}; do
+            RESPONSE=$(curl -s \
+              "${{ secrets.JIRA_BASE_URL }}/rest/api/3/issue/$ISSUE_KEY?fields=status" \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}")
+            
+            STATUS=$(echo "$RESPONSE" | jq -r '.fields.status.name')
+            
+            echo "[$i/30] Status: $STATUS"
+            
+            # Check for approval
+            if [ "$STATUS" = "Done" ]; then
+              echo "decision=approved" >> $GITHUB_OUTPUT
+              echo "✅ APPROVED!"
+              exit 0
+            fi
+            
+            # Check for rejection
+            if [ "$STATUS" = "Rejected" ] || [ "$STATUS" = "Cancelled" ]; then
+              echo "decision=rejected" >> $GITHUB_OUTPUT
+              echo "❌ REJECTED!"
+              exit 0
+            fi
+            
+            # Check for errors
+            if [ "$STATUS" = "null" ]; then
+              echo "⚠️ Warning: Could not fetch status (attempt $i/30)"
+            fi
+            
+            sleep 60
+          done
+          
+          # Timeout
+          echo "decision=timeout" >> $GITHUB_OUTPUT
+          echo "⏱️ TIMEOUT - No decision made"
+          exit 0
+
+      # Step 3: Create Repo (only if approved)
+      - name: Create GitHub Repo
+        if: steps.decision.outputs.decision == 'approved'
+        id: repo
+        run: |
+          echo "Creating repository: ${{ inputs.repo_name }}"
+          
+          RESPONSE=$(curl -s -w "
+%{http_code}" -X POST \
+            -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/orgs/abiolaemma2026/repos \
+            -d '{
+              "name": "${{ inputs.repo_name }}",
+              "description": "${{ inputs.repo_description }}",
+              "private": ${{ inputs.private }},
+              "auto_init": true
+            }')
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" -ne 201 ]; then
+            echo "❌ Failed to create repository!"
+            echo "$BODY" | jq '.'
+            exit 1
+          fi
+          
+          URL=$(echo "$BODY" | jq -r '.html_url')
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "✅ Created: $URL"
+
+            -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/orgs/abiolaemma2026/repos \
+            -d '{
+              "name": "${{ inputs.repo_name }}",
+              "description": "${{ inputs.repo_description }}",
+              "private": ${{ inputs.private }},
+              "auto_init": true
+            }')
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" -ne 201 ]; then
+            echo "❌ Failed to create repository!"
+            echo "$BODY" | jq '.'
+            exit 1
+          fi
+          
+          URL=$(echo "$BODY" | jq -r '.html_url')
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "✅ Created: $URL"
+
+      # Step 4: Report Success
+      - name: Report Success
+        if: steps.decision.outputs.decision == 'approved'
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          operation: PATCH_RUN
+          runId: ${{ inputs.port_run_id }}
+          logMessage: |
+            ✅ Repository created successfully!
+            
+            🔗 Repository: ${{ steps.repo.outputs.url }}
+            🎫 Jira ticket: ${{ secrets.JIRA_BASE_URL }}/browse/${{ steps.jira.outputs.key }}
+
+      # Step 5: Report Rejection
+      - name: Report Rejection
+        if: steps.decision.outputs.decision == 'rejected'
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          operation: PATCH_RUN
+          runId: ${{ inputs.port_run_id }}
+          status: FAILURE
+          logMessage: |
+            ❌ Repository request was REJECTED
+            
+            🎫 Jira ticket: ${{ secrets.JIRA_BASE_URL }}/browse/${{ steps.jira.outputs.key }}
+            
+            No repository was created.
+
+      # Step 6: Report Timeout
+      - name: Report Timeout
+        if: steps.decision.outputs.decision == 'timeout'
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          operation: PATCH_RUN
+          runId: ${{ inputs.port_run_id }}
+          status: FAILURE
+          logMessage: |
+            ⏱️ Request timed out - No decision made within 30 minutes
+            
+            🎫 Jira ticket: ${{ secrets.JIRA_BASE_URL }}/browse/${{ steps.jira.outputs.key }}
+            
+            No repository was created.
