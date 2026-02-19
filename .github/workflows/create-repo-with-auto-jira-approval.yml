@@ -22,8 +22,7 @@ jobs:
         run: |
           echo "Creating Jira ticket for repo: ${{ inputs.repo_name }}"
           
-          RESPONSE=$(curl -s -w "
-%{http_code}" -X POST \
+          RESPONSE=$(curl -s -w "%{http_code}" -X POST \
             "${{ secrets.JIRA_BASE_URL }}/rest/api/3/issue" \
             -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
             -H "Content-Type: application/json" \
@@ -39,9 +38,7 @@ jobs:
                     "type": "paragraph",
                     "content": [{
                       "type": "text",
-                      "text": "Repository: ${{ inputs.repo_name }}
-\nTO APPROVE: Move to Done
-TO REJECT: Move to Rejected"
+                      "text": "Repository: ${{ inputs.repo_name }}\nTO APPROVE: Move to Done TO REJECT: Move to Rejected"
                     }]
                   }]
                 }
@@ -140,8 +137,7 @@ TO REJECT: Move to Rejected"
         run: |
           echo "Creating repository: ${{ inputs.repo_name }}"
           
-          RESPONSE=$(curl -s -w "
-%{http_code}" -X POST \
+          RESPONSE=$(curl -s -w "%{http_code}" -X POST \
             -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/orgs/abiolaemma2026/repos \
