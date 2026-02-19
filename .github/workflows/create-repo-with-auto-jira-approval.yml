@@ -28,7 +28,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{
               "fields": {
-                "project": {"key": "SCRUM"},
+                "project": {"key": "ABIOL2"},
                 "issuetype": {"name": "Task"},
                 "summary": "Repo Request: ${{ inputs.repo_name }}",
                 "description": {
