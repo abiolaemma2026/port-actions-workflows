@@ -36,66 +36,65 @@ jobs:
                     "type": "paragraph",
                     "content": [{
                       "type": "text",
-                      "text": "Repository: ${{ inputs.repo_name }}\n
-            Move to Done to approve."
-                                }]
-                            }]
-                            }
-                        }
-                        }')
-                    
-                    KEY=$(echo "$RESPONSE" | jq -r '.key')
-                    echo "key=$KEY" >> $GITHUB_OUTPUT
-                    echo "Created Jira: $KEY"
+                      "text": "Repository: ${{ inputs.repo_name }}\nMove to Done to approve."
+                    }]
+                  }]
+                }
+              }
+            }')
+          
+          KEY=$(echo "$RESPONSE" | jq -r '.key')
+          echo "key=$KEY" >> $GITHUB_OUTPUT
+          echo "Created Jira: $KEY"
 
-                # Step 2: Wait for Approval (checks every minute for 30 minutes)
-                - name: Wait for Approval
-                    run: |
-                    for i in {1..30}; do
-                        STATUS=$(curl -s \
-                        "${{ secrets.JIRA_BASE_URL }}/rest/api/3/issue/${{ steps.jira.outputs.key }}?fields=status" \
-                        -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
-                        | jq -r '.fields.status.name')
-                        
-                        echo "[$i/30] Status: $STATUS"
-                        
-                        if [ "$STATUS" = "Done" ]; then
-                        echo "✅ Approved!"
-                        exit 0
-                        fi
-                        
-                        sleep 60
-                    done
-                    
-                    echo "❌ Timeout - no approval"
-                    exit 1
+      # Step 2: Wait for Approval (checks every minute for 30 minutes)
+      - name: Wait for Approval
+        run: |
+          for i in {1..30}; do
+            STATUS=$(curl -s \
+              "${{ secrets.JIRA_BASE_URL }}/rest/api/3/issue/${{ steps.jira.outputs.key }}?fields=status" \
+              -u "${{ secrets.JIRA_USER_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+              | jq -r '.fields.status.name')
+            
+            echo "[$i/30] Status: $STATUS"
+            
+            if [ "$STATUS" = "Done" ]; then
+              echo "✅ Approved!"
+              exit 0
+            fi
+            
+            sleep 60
+          done
+          
+          echo "❌ Timeout - no approval"
+          exit 1
 
-                # Step 3: Create GitHub Repo (only runs if approved)
-                - name: Create GitHub Repo
-                    id: repo
-                    run: |
-                    curl -X POST \
-                        -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
-                        https://api.github.com/orgs/abiolaemma2026/repos \
-                        -d '{
-                        "name": "${{ inputs.repo_name }}",
-                        "description": "${{ inputs.repo_description }}",
-                        "private": ${{ inputs.private }},
-                        "auto_init": true
-                        }' | tee response.json
-                    
-                    URL=$(jq -r '.html_url' response.json)
-                    echo "url=$URL" >> $GITHUB_OUTPUT
-                    echo "✅ Created: $URL"
+      # Step 3: Create GitHub Repo (only runs if approved)
+      - name: Create GitHub Repo
+        id: repo
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GH_TOKEN }}" \
+            https://api.github.com/orgs/abiolaemma2026/repos \
+            -d '{
+            "name": "${{ inputs.repo_name }}",
+            "description": "${{ inputs.repo_description }}",
+            "private": ${{ inputs.private }},
+            "auto_init": true
+            }' | tee response.json
+          
+          URL=$(jq -r '.html_url' response.json)
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "✅ Created: $URL"
 
-                # Step 4: Report to Port
-                - name: Update Port
-                    uses: port-labs/port-github-action@v1
-                    with:
-                    clientId: ${{ secrets.PORT_CLIENT_ID }}
-                    clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
-                    operation: PATCH_RUN
-                    runId: ${{ inputs.port_run_id }}
-                    logMessage: |
-                        ✅ Repository created: ${{ steps.repo.outputs.url }}
-                        🎫 Jira ticket: ${{ steps.jira.outputs.key }}
+      # Step 4: Report to Port
+      - name: Update Port
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          operation: PATCH_RUN
+          runId: ${{ inputs.port_run_id }}
+          logMessage: |
+            ✅ Repository created: ${{ steps.repo.outputs.url }}
+            🎫 Jira ticket: ${{ steps.jira.outputs.key }}
