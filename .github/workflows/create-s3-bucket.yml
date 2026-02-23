@@ -34,7 +34,7 @@ jobs:
         uses: aws-actions/aws-cloudformation-github-deploy@v1
         with:
           name: ${{ inputs.bucket_name }}
-          template: cloudformation/s3-bucket.yaml
+          template: C:\Users\eogundip\Project\port-actions-workflows\s3-bucket.yaml
           parameter-overrides: >-
             BucketName=${{ inputs.bucket_name }},
             BucketAcl=${{ inputs.bucket_acl }}
