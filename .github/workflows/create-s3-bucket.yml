@@ -58,3 +58,17 @@ jobs:
           baseUrl: https://api.getport.io
           operation: UPSERT
           runId: ${{fromJson(inputs.port_context).runId}}
+
+      - name: Log success to Port run
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(inputs.port_context).runId }}
+          status: "SUCCESS"
+          logMessage: |
+            ✅ S3 bucket created successfully.
+            Bucket name: ${{ inputs.bucket_name }}
+            Bucket ACL: ${{ inputs.bucket_acl }}
