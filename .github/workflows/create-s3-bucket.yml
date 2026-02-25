@@ -54,7 +54,7 @@ jobs:
             }
           relations: |-
             {
-              "repository": "abiolaemma2026/port-actions-workflows"
+              "repository": "port-actions-workflows"
             }                      
           clientId: ${{ secrets.PORT_CLIENT_ID }}
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
