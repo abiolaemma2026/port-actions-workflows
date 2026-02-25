@@ -52,7 +52,10 @@ jobs:
               "bucket_name": "${{ inputs.bucket_name }}",
               "bucket_acl": "${{ inputs.bucket_acl }}"
             }
-          relations: '{}'
+          relations: |-
+            {
+              "repository": "abiolaemma2026/port-actions-workflows"
+            }                      
           clientId: ${{ secrets.PORT_CLIENT_ID }}
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
           baseUrl: https://api.getport.io
