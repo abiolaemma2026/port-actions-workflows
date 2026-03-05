@@ -3,14 +3,47 @@ name: Deploy CloudFormation - S3 Bucket
 on:
   workflow_dispatch:
     inputs:
+      aws_account:
+        description: 'AWS Account'
+        required: true
+        type: string
+      aws_region:
+        description: 'AWS Region'
+        required: true
+        type: string
       bucket_name:
+        description: 'Bucket Name'
         required: true
         type: string
-        description: bucket name
       bucket_acl:
+        description: 'Bucket ACL'
         required: true
         type: string
-        description: bucket acl
+      storage_class:
+        description: 'Storage Class'
+        required: false
+        type: string
+        default: 'STANDARD'
+      versioning:
+        description: 'Enable Versioning'
+        required: false
+        type: string
+        default: 'false'
+      encryption:
+        description: 'Encryption Type'
+        required: false
+        type: string
+        default: 'AES256'
+      kms_key_id:
+        description: 'KMS Key ID'
+        required: false
+        type: string
+        default: ''
+      tags:
+        description: 'Tags (JSON array)'
+        required: false
+        type: string
+        default: '[]'
       port_context:
         required: true
         description: Details of the action and general port_context (blueprint, run id, etc...)
@@ -24,11 +57,25 @@ jobs:
 
       - name: Configure AWS Credentials 🔒
         id: aws-credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Prepare Tags for CloudFormation
+        id: prepare-tags
+        run: |
+          TAGS_INPUT='${{ inputs.tags }}'
+          if [ "$TAGS_INPUT" != "[]" ] && [ ! -z "$TAGS_INPUT" ]; then
+            # Convert Port tags format to CloudFormation format
+            CF_TAGS=$(echo "$TAGS_INPUT" | jq -r 'map("Key=\(.key),Value=\(.value)") | join(",")')
+            echo "tags=$CF_TAGS" >> $GITHUB_OUTPUT
+            echo "has_tags=true" >> $GITHUB_OUTPUT
+          else
+            echo "tags=" >> $GITHUB_OUTPUT
+            echo "has_tags=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Deploy to AWS CloudFormation
         uses: aws-actions/aws-cloudformation-github-deploy@v1
@@ -37,7 +84,21 @@ jobs:
           template: s3-bucket.yaml
           parameter-overrides: >-
             BucketName=${{ inputs.bucket_name }},
-            BucketAcl=${{ inputs.bucket_acl }}
+            BucketAcl=${{ inputs.bucket_acl }},
+            StorageClass=${{ inputs.storage_class }},
+            VersioningEnabled=${{ inputs.versioning }},
+            EncryptionType=${{ inputs.encryption }},
+            KmsKeyId=${{ inputs.kms_key_id }}
+          tags: ${{ steps.prepare-tags.outputs.has_tags == 'true' && steps.prepare-tags.outputs.tags || '' }}
+
+      - name: Get CloudFormation Stack Outputs
+        id: stack-outputs
+        run: |
+          BUCKET_ARN=$(aws cloudformation describe-stacks \
+            --stack-name ${{ inputs.bucket_name }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`BucketArn`].OutputValue' \
+            --output text)
+          echo "bucket_arn=$BUCKET_ARN" >> $GITHUB_OUTPUT
 
       - name: UPSERT S3 Bucket Entity in Port
         uses: port-labs/port-github-action@v1
@@ -50,12 +111,20 @@ jobs:
           properties: |-
             {
               "bucket_name": "${{ inputs.bucket_name }}",
-              "bucket_acl": "${{ inputs.bucket_acl }}"
+              "bucket_acl": "${{ inputs.bucket_acl }}",
+              "aws_account": "${{ inputs.aws_account }}",
+              "aws_region": "${{ inputs.aws_region }}",
+              "storage_class": "${{ inputs.storage_class }}",
+              "versioning_enabled": ${{ inputs.versioning }},
+              "encryption_type": "${{ inputs.encryption }}",
+              "kms_key_id": "${{ inputs.kms_key_id }}",
+              "bucket_arn": "${{ steps.stack-outputs.outputs.bucket_arn }}",
+              "tags": ${{ inputs.tags }}
             }
           relations: |-
             {
               "repository": "port-actions-workflows"
-            }                      
+            }      
           clientId: ${{ secrets.PORT_CLIENT_ID }}
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
           baseUrl: https://api.getport.io
@@ -72,6 +141,33 @@ jobs:
           runId: ${{ fromJson(inputs.port_context).runId }}
           status: "SUCCESS"
           logMessage: |
-            ✅ S3 bucket created successfully.
-            Bucket name: ${{ inputs.bucket_name }}
-            Bucket ACL: ${{ inputs.bucket_acl }}
+            ✅ S3 bucket created successfully via CloudFormation
+            
+            📦 **Bucket Details:**
+            - Name: ${{ inputs.bucket_name }}
+            - Account: ${{ inputs.aws_account }}
+            - Region: ${{ inputs.aws_region }}
+            - ACL: ${{ inputs.bucket_acl }}
+            - Storage Class: ${{ inputs.storage_class }}
+            - Versioning: ${{ inputs.versioning }}
+            - Encryption: ${{ inputs.encryption }}
+            ${{ inputs.encryption == 'aws:kms' && format('- KMS Key: {0}', inputs.kms_key_id) || '' }}
+            - ARN: ${{ steps.stack-outputs.outputs.bucket_arn }}
+
+      - name: Log failure to Port run
+        if: failure()
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(inputs.port_context).runId }}
+          status: "FAILURE"
+          logMessage: |
+            ❌ Failed to create S3 bucket '${{ inputs.bucket_name }}'
+            
+            Account: ${{ inputs.aws_account }}
+            Region: ${{ inputs.aws_region }}
+            
+            Please check the workflow logs for details.
