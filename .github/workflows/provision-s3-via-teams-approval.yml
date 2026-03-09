@@ -74,7 +74,7 @@ jobs:
           {
             "owner": "${{ github.repository_owner }}",
             "repo": "${{ github.event.repository.name }}",
-            "workflow_file": ".github/workflows/${{ github.workflow }}.yml",
+            "workflow_file": ".github/workflows/provision-s3-via-teams-approval.yml",
             "ref": "${{ github.ref_name }}",
             "requested_by": "${{ github.actor }}",
             "run_id": "${{ github.run_id }}",
