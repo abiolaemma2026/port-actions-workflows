@@ -35,6 +35,9 @@ Conditions:
   HasKmsKeyId: !Not [ !Equals [ !Ref KmsKeyId, '' ] ]
   UseProvidedKms: !And [ !Condition UseKMS, !Condition HasKmsKeyId ]
 
+  # ✅ Only required for non-us-east-1
+  NotUSEast1: !Not [ !Equals [ !Ref AWSRegion, 'us-east-1' ] ]
+
 Resources:
 
   S3Bucket:
@@ -52,8 +55,12 @@ Resources:
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
 
+      # ✅ Add LocationConstraint only when region != us-east-1
       CreateBucketConfiguration:
-        LocationConstraint: !Ref AWSRegion
+        Fn::If:
+          - NotUSEast1
+          - LocationConstraint: !Ref AWSRegion
+          - !Ref AWS::NoValue
 
       VersioningConfiguration:
         Fn::If:
