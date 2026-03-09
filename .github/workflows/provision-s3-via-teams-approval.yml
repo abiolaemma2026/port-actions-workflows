@@ -132,11 +132,10 @@ jobs:
           template: s3-bucket.yaml
           parameter-overrides: >-
             BucketName=${{ inputs.bucket_name }},
-            StorageClass=${{ inputs.storage_class }},
+            AWSRegion=${{ inputs.aws_region }},
             VersioningEnabled=${{ inputs.versioning }},
             EncryptionType=${{ inputs.encryption }},
             KmsKeyId=${{ inputs.kms_key_id }}
-          tags: ${{ steps.prepare-tags.outputs.has_tags == 'true' && steps.prepare-tags.outputs.tags || '' }}
 
       - name: Get CloudFormation Stack Outputs
         id: stack-outputs
