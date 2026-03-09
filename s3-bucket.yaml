@@ -35,7 +35,7 @@ Conditions:
   HasKmsKeyId: !Not [ !Equals [ !Ref KmsKeyId, '' ] ]
   UseProvidedKms: !And [ !Condition UseKMS, !Condition HasKmsKeyId ]
 
-  # ✅ Only required for non-us-east-1
+  # Only required for non-us-east-1
   NotUSEast1: !Not [ !Equals [ !Ref AWSRegion, 'us-east-1' ] ]
 
 Resources:
@@ -55,29 +55,30 @@ Resources:
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
 
-      # ✅ Add LocationConstraint only when region != us-east-1
+      # Add LocationConstraint only when region != us-east-1
       CreateBucketConfiguration:
         Fn::If:
           - NotUSEast1
-          - LocationConstraint: !Ref AWSRegion
+          - 
+            LocationConstraint: !Ref AWSRegion
           - !Ref AWS::NoValue
 
       VersioningConfiguration:
         Fn::If:
           - EnableVersioning
-          -
+          - 
             Status: Enabled
           - !Ref AWS::NoValue
 
       BucketEncryption:
         Fn::If:
           - UseProvidedKms
-          -
+          - 
             ServerSideEncryptionConfiguration:
               - ServerSideEncryptionByDefault:
                   SSEAlgorithm: aws:kms
                   KMSMasterKeyID: !Ref KmsKeyId
-          -
+          - 
             ServerSideEncryptionConfiguration:
               - ServerSideEncryptionByDefault:
                   SSEAlgorithm: AES256
