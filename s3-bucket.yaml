@@ -7,9 +7,8 @@ Parameters:
   BucketName:
     Type: String
 
-  StorageClass:
+  AWSRegion:
     Type: String
-    Default: STANDARD
 
   VersioningEnabled:
     Type: String
@@ -43,9 +42,6 @@ Resources:
     Properties:
       BucketName: !Ref BucketName
 
-      # ✅ Required for CreateBucket success in us-east-1
-      AccessControl: Private
-
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
@@ -55,6 +51,9 @@ Resources:
         IgnorePublicAcls: true
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
+
+      CreateBucketConfiguration:
+        LocationConstraint: !Ref AWSRegion
 
       VersioningConfiguration:
         Fn::If:
