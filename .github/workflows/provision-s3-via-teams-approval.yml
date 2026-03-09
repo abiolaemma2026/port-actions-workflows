@@ -62,6 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
                
+    
       - name: Post approval request to Logic App (Teams)
         env:
           LOGIC_APP_URL: ${{ secrets.LOGIC_APP_URL }}
@@ -70,8 +71,9 @@ jobs:
             echo "Missing repo secret LOGIC_APP_URL"; exit 1
           fi
 
-          # Safely escape port_context as a JSON string
-          PORT_CONTEXT_ESCAPED=$(printf '%s' '${{ inputs.port_context }}' | jq -R .)
+          # Parse tags (array) and port_context (object) into proper JSON
+          TAGS_JSON=$(printf '%s' '${{ inputs.tags }}' | jq .)
+          PORT_CONTEXT_OBJ=$(printf '%s' '${{ inputs.port_context }}' | jq .)
 
           cat > payload.json <<EOF
           {
@@ -89,16 +91,16 @@ jobs:
             "versioning": "${{ inputs.versioning }}",
             "encryption": "${{ inputs.encryption }}",
             "kms_key_id": "${{ inputs.kms_key_id }}",
-            "tags": "${{ inputs.tags }}",
-            "port_context": $PORT_CONTEXT_ESCAPED
+            "tags": $TAGS_JSON,
+            "port_context": $PORT_CONTEXT_OBJ
           }
           EOF
+
+          cat payload.json
 
           curl -sS -X POST "$LOGIC_APP_URL" \
             -H "Content-Type: application/json" \
             --data-binary @payload.json
-        
-
            
 
 # ✅ RUN #2 — DEPLOY AFTER APPROVAL
