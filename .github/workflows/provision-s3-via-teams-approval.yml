@@ -86,10 +86,12 @@ jobs:
             "versioning": "${{ inputs.versioning }}",
             "encryption": "${{ inputs.encryption }}",
             "kms_key_id": "${{ inputs.kms_key_id }}",
-            "tags": ${{ inputs.tags }},
+            "tags": "${{ inputs.tags }}",
             "port_context": "${{ inputs.port_context }}"
           }
           EOF
+
+
           
 
 
