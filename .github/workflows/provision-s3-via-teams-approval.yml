@@ -61,10 +61,13 @@ jobs:
     if: ${{ inputs.approved != 'true' }}
     runs-on: ubuntu-latest
     steps:
+      
       - name: Post approval request to Logic App (Teams)
         env:
           LOGIC_APP_URL: ${{ secrets.LOGIC_APP_URL }}
         run: |
+          PORT_CONTEXT_ESCAPED=$(printf '%s' '${{ inputs.port_context }}')
+
           payload=$(jq -n \
             --arg owner "${{ github.repository_owner }}" \
             --arg repo "${{ github.event.repository.name }}" \
@@ -81,7 +84,7 @@ jobs:
             --arg encryption "${{ inputs.encryption }}" \
             --arg kms_key_id "${{ inputs.kms_key_id }}" \
             --arg tags "${{ inputs.tags }}" \
-            --arg port_context "${{ inputs.port_context }}" \
+            --arg port_context "$PORT_CONTEXT_ESCAPED" \
             '{
               owner:$owner,
               repo:$repo,
@@ -104,7 +107,7 @@ jobs:
           curl -sS -X POST "$LOGIC_APP_URL" \
             -H "Content-Type: application/json" \
             --data-raw "$payload"
-
+       
   # ✅ RUN #2 — DEPLOY AFTER APPROVAL
   deploy-cloudformation-template:
     if: ${{ inputs.approved == 'true' }}
