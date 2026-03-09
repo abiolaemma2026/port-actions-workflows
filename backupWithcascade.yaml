@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 Bucket with advanced configuration'
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Name of the S3 bucket
+  BucketAcl:
+    Type: String
+    Description: Bucket ACL
+    Default: Private
+  StorageClass:
+    Type: String
+    Description: Default storage class
+    Default: STANDARD
+  VersioningEnabled:
+    Type: String
+    Description: Enable versioning
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+  EncryptionType:
+    Type: String
+    Description: Encryption type
+    Default: AES256
+    AllowedValues:
+      - AES256
+      - aws:kms
+  KmsKeyId:
+    Type: String
+    Description: KMS Key ID (if using KMS encryption)
+    Default: ''
+
+Conditions:
+  EnableVersioning: !Equals [!Ref VersioningEnabled, 'true']
+  UseKmsEncryption: !Equals [!Ref EncryptionType, 'aws:kms']
+  HasKmsKey: !Not [!Equals [!Ref KmsKeyId, '']]
+
+Resources:
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      AccessControl: !Ref BucketAcl
+      VersioningConfiguration:
+        Status: !If [EnableVersioning, Enabled, Suspended]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: !Ref EncryptionType
+              KMSMasterKeyID: !If [UseKmsEncryption, !Ref KmsKeyId, !Ref AWS::NoValue]
+            BucketKeyEnabled: !If [UseKmsEncryption, true, false]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+Outputs:
+  BucketName:
+    Description: Name of the S3 bucket
+    Value: !Ref S3Bucket
+  BucketArn:
+    Description: ARN of the S3 bucket
+    Value: !GetAtt S3Bucket.Arn
+  BucketDomainName:
+    Description: Domain name of the S3 bucket
+    Value: !GetAtt S3Bucket.DomainName
