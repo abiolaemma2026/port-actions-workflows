@@ -1,69 +1,83 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'S3 Bucket with advanced configuration'
 
+Description: CloudFormation Template for an S3 Bucket Provisioned via GitHub Approval Workflow
+
+
+# These values are passed from your GitHub workflow (Run #2)
 Parameters:
+
+  # Bucket name passed from GitHub workflow input
   BucketName:
     Type: String
-    Description: Name of the S3 bucket
+
+  # Access control level for the bucket. Must match GitHub input exactly (case-sensitive)
   BucketAcl:
     Type: String
-    Description: Bucket ACL
     Default: Private
+    AllowedValues:
+      - Private
+      - PublicRead
+      - PublicReadWrite
+      - AuthenticatedRead
   StorageClass:
     Type: String
-    Description: Default storage class
     Default: STANDARD
   VersioningEnabled:
     Type: String
-    Description: Enable versioning
     Default: 'false'
     AllowedValues:
       - 'true'
       - 'false'
   EncryptionType:
     Type: String
-    Description: Encryption type
     Default: AES256
     AllowedValues:
       - AES256
       - aws:kms
+  # Optional KMS Key ID. May be empty if AES256 is used
   KmsKeyId:
     Type: String
-    Description: KMS Key ID (if using KMS encryption)
     Default: ''
 
 Conditions:
-  EnableVersioning: !Equals [!Ref VersioningEnabled, 'true']
-  UseKmsEncryption: !Equals [!Ref EncryptionType, 'aws:kms']
-  HasKmsKey: !Not [!Equals [!Ref KmsKeyId, '']]
+ 
+  EnableVersioning: !Equals [ !Ref VersioningEnabled, 'true' ]
+  UseKMS: !Equals [ !Ref EncryptionType, 'aws:kms' ]
+  # Ensure KMS Key ID is NOT empty
+  HasKmsKeyId: !Not [ !Equals [ !Ref KmsKeyId, '' ] ]
+  UseProvidedKms: !And [ !Condition UseKMS, !Condition HasKmsKeyId ]
 
+# Defines the actual AWS resources to be created
 Resources:
+  # Created only after Teams approval triggers Run #2
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
+      # Bucket name provided by GitHub workflow input
       BucketName: !Ref BucketName
       AccessControl: !Ref BucketAcl
       VersioningConfiguration:
-        Status: !If [EnableVersioning, Enabled, Suspended]
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: !Ref EncryptionType
-              KMSMasterKeyID: !If [UseKmsEncryption, !Ref KmsKeyId, !Ref AWS::NoValue]
-            BucketKeyEnabled: !If [UseKmsEncryption, true, false]
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
+        Fn::If:
+          - EnableVersioning
+          -
+            Status: Enabled
+          - !Ref AWS::NoValue
 
+      BucketEncryption:
+        Fn::If:
+          - UseProvidedKms
+          -
+            ServerSideEncryptionConfiguration:
+              - ServerSideEncryptionByDefault:
+                  SSEAlgorithm: aws:kms
+                  KMSMasterKeyID: !Ref KmsKeyId
+          -
+            ServerSideEncryptionConfiguration:
+              - ServerSideEncryptionByDefault:
+                  SSEAlgorithm: AES256
+# Returned to GitHub workflow after deployment. # Used by: - UPSERT to Port and - Run status logging
 Outputs:
-  BucketName:
-    Description: Name of the S3 bucket
-    Value: !Ref S3Bucket
+  # Bucket ARN returned after stack deployment. GitHub reads this via: aws cloudformation describe-stacks
   BucketArn:
-    Description: ARN of the S3 bucket
+    Description: ARN of the S3 Bucket
     Value: !GetAtt S3Bucket.Arn
-  BucketDomainName:
-    Description: Domain name of the S3 bucket
-    Value: !GetAtt S3Bucket.DomainName
