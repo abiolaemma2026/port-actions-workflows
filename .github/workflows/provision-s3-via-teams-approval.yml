@@ -132,7 +132,6 @@ jobs:
           template: s3-bucket.yaml
           parameter-overrides: >-
             BucketName=${{ inputs.bucket_name }},
-            BucketAcl=${{ inputs.bucket_acl }},
             StorageClass=${{ inputs.storage_class }},
             VersioningEnabled=${{ inputs.versioning }},
             EncryptionType=${{ inputs.encryption }},
