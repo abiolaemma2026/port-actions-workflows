@@ -87,9 +87,10 @@ jobs:
             "encryption": "${{ inputs.encryption }}",
             "kms_key_id": "${{ inputs.kms_key_id }}",
             "tags": ${{ inputs.tags }},
-            "port_context": ${{ inputs.port_context }}
+            "port_context": "${{ inputs.port_context }}"
           }
           EOF
+
 
           echo "Sending approval request to Logic App..."
           curl -sS -X POST "$LOGIC_APP_URL" \
