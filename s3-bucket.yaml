@@ -43,10 +43,15 @@ Resources:
     Properties:
       BucketName: !Ref BucketName
 
-      # ✅ Required for modern S3 security model
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
 
       VersioningConfiguration:
         Fn::If:
