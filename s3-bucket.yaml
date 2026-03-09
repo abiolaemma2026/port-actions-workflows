@@ -43,6 +43,9 @@ Resources:
     Properties:
       BucketName: !Ref BucketName
 
+      # ✅ Required for CreateBucket success in us-east-1
+      AccessControl: Private
+
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
