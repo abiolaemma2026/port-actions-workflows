@@ -1,0 +1,204 @@
+name: Port-Triggered S3 Bucket Provisioning with Teams Approval
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_account:
+        description: 'AWS Account'
+        required: true
+        type: string
+      aws_region:
+        description: 'AWS Region'
+        required: true
+        type: string
+      bucket_name:
+        description: 'Bucket Name'
+        required: true
+        type: string
+      bucket_acl:
+        description: 'Bucket ACL'
+        required: true
+        type: string
+      storage_class:
+        description: 'Storage Class'
+        required: false
+        type: string
+        default: 'STANDARD'
+      versioning:
+        description: 'Enable Versioning'
+        required: false
+        type: string
+        default: 'false'
+      encryption:
+        description: 'Encryption Type'
+        required: false
+        type: string
+        default: 'AES256'
+      kms_key_id:
+        description: 'KMS Key ID'
+        required: false
+        type: string
+        default: ''
+      tags:
+        description: 'Tags (JSON array)'
+        required: false
+        type: string
+        default: '[]'
+      port_context:
+        description: Details of the Port action context (runId etc.)
+        required: true
+        type: string
+      approved:
+        description: 'Internal flag set by Logic App after Teams approval'
+        required: false
+        type: string
+        default: 'false'
+
+jobs:
+
+  # ✅ RUN #1 — APPROVAL GATE
+  approval-gate:
+    if: ${{ inputs.approved != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post approval request to Logic App (Teams)
+        env:
+          LOGIC_APP_URL: ${{ secrets.LOGIC_APP_URL }}
+        run: |
+          if [ -z "$LOGIC_APP_URL" ]; then
+            echo "Missing repo secret LOGIC_APP_URL"; exit 1
+          fi
+
+          cat > payload.json <<EOF
+          {
+            "owner": "${{ github.repository_owner }}",
+            "repo": "${{ github.repository }}",
+            "workflow_file": ".github/workflows/${{ github.workflow }}.yml",
+            "ref": "${{ github.ref_name }}",
+            "requested_by": "${{ github.actor }}",
+            "run_id": "${{ github.run_id }}",
+            "aws_account": "${{ inputs.aws_account }}",
+            "aws_region": "${{ inputs.aws_region }}",
+            "bucket_name": "${{ inputs.bucket_name }}",
+            "bucket_acl": "${{ inputs.bucket_acl }}",
+            "storage_class": "${{ inputs.storage_class }}",
+            "versioning": "${{ inputs.versioning }}",
+            "encryption": "${{ inputs.encryption }}",
+            "kms_key_id": "${{ inputs.kms_key_id }}",
+            "tags": ${{ inputs.tags }},
+            "port_context": ${{ inputs.port_context }}
+          }
+          EOF
+
+          echo "Sending approval request to Logic App..."
+          curl -sS -X POST "$LOGIC_APP_URL" \
+            -H "Content-Type: application/json" \
+            --data-binary @payload.json
+
+          echo "Approval requested in Teams. Run #1 will now stop."
+
+  # ✅ RUN #2 — DEPLOY AFTER APPROVAL
+  deploy-cloudformation-template:
+    if: ${{ inputs.approved == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials 🔒
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Prepare Tags for CloudFormation
+        id: prepare-tags
+        run: |
+          TAGS_INPUT='${{ inputs.tags }}'
+          if [ "$TAGS_INPUT" != "[]" ] && [ ! -z "$TAGS_INPUT" ]; then
+            CF_TAGS=$(echo "$TAGS_INPUT" | jq -r 'map("Key=\(.key),Value=\(.value)") | join(",")')
+            echo "tags=$CF_TAGS" >> $GITHUB_OUTPUT
+            echo "has_tags=true" >> $GITHUB_OUTPUT
+          else
+            echo "tags=" >> $GITHUB_OUTPUT
+            echo "has_tags=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy to AWS CloudFormation
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: ${{ inputs.bucket_name }}
+          template: s3-bucket.yaml
+          parameter-overrides: >-
+            BucketName=${{ inputs.bucket_name }},
+            BucketAcl=${{ inputs.bucket_acl }},
+            StorageClass=${{ inputs.storage_class }},
+            VersioningEnabled=${{ inputs.versioning }},
+            EncryptionType=${{ inputs.encryption }},
+            KmsKeyId=${{ inputs.kms_key_id }}
+          tags: ${{ steps.prepare-tags.outputs.has_tags == 'true' && steps.prepare-tags.outputs.tags || '' }}
+
+      - name: Get CloudFormation Stack Outputs
+        id: stack-outputs
+        run: |
+          BUCKET_ARN=$(aws cloudformation describe-stacks \
+            --stack-name ${{ inputs.bucket_name }} \
+            --query 'Stacks[0].Outputs[?OutputKey==`BucketArn`].OutputValue' \
+            --output text)
+          echo "bucket_arn=$BUCKET_ARN" >> $GITHUB_OUTPUT
+
+      - name: UPSERT S3 Bucket Entity in Port
+        uses: port-labs/port-github-action@v1
+        with:
+          identifier: ${{ inputs.bucket_name }}
+          title: ${{ inputs.bucket_name }}
+          team: '[]'
+          icon: S3
+          blueprint: s3_bucket
+          properties: |-
+            {
+              "bucket_name": "${{ inputs.bucket_name }}",
+              "bucket_acl": "${{ inputs.bucket_acl }}",
+              "aws_account": "${{ inputs.aws_account }}",
+              "aws_region": "${{ inputs.aws_region }}",
+              "storage_class": "${{ inputs.storage_class }}",
+              "versioning_enabled": ${{ inputs.versioning }},
+              "encryption_type": "${{ inputs.encryption }}",
+              "kms_key_id": "${{ inputs.kms_key_id }}",
+              "bucket_arn": "${{ steps.stack-outputs.outputs.bucket_arn }}",
+              "tags": ${{ inputs.tags }}
+            }
+          relations: |-
+            {
+              "repository": "port-actions-workflows"
+            }
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
+          operation: UPSERT
+          runId: ${{ fromJson(inputs.port_context).runId }}
+
+      - name: Log success to Port run
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(inputs.port_context).runId }}
+          status: "SUCCESS"
+          logMessage: |
+            ✅ S3 bucket created successfully via CloudFormation
+
+      - name: Log failure to Port run
+        if: failure()
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(inputs.port_context).runId }}
+          status: "FAILURE"
+          logMessage: |
+            ❌ Failed to create S3 bucket '${{ inputs.bucket_name }}'
