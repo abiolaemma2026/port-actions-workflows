@@ -61,6 +61,7 @@ jobs:
     if: ${{ inputs.approved != 'true' }}
     runs-on: ubuntu-latest
     steps:
+               
       - name: Post approval request to Logic App (Teams)
         env:
           LOGIC_APP_URL: ${{ secrets.LOGIC_APP_URL }}
@@ -69,7 +70,10 @@ jobs:
             echo "Missing repo secret LOGIC_APP_URL"; exit 1
           fi
 
-          cat > payload.json <<'EOF'
+          # Safely escape port_context as a JSON string
+          PORT_CONTEXT_ESCAPED=$(printf '%s' '${{ inputs.port_context }}' | jq -R .)
+
+          cat > payload.json <<EOF
           {
             "owner": "${{ github.repository_owner }}",
             "repo": "${{ github.event.repository.name }}",
@@ -86,14 +90,16 @@ jobs:
             "encryption": "${{ inputs.encryption }}",
             "kms_key_id": "${{ inputs.kms_key_id }}",
             "tags": "${{ inputs.tags }}",
-            "port_context": "${{ inputs.port_context }}"
+            "port_context": $PORT_CONTEXT_ESCAPED
           }
           EOF
 
           curl -sS -X POST "$LOGIC_APP_URL" \
             -H "Content-Type: application/json" \
             --data-binary @payload.json
+        
 
+           
 
 # ✅ RUN #2 — DEPLOY AFTER APPROVAL
   deploy-cloudformation-template:
