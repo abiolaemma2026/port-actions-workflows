@@ -1,4 +1,4 @@
-name: Port-Triggered S3 Bucket Provisioning with Teams Approval
+name: Provision S3 via Teams Approval
 
 on:
   workflow_dispatch:
