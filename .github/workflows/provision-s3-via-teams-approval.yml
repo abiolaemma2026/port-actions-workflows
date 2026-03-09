@@ -53,6 +53,7 @@ on:
         required: false
         type: string
         default: 'false'
+              
 
 jobs:
 
@@ -72,7 +73,7 @@ jobs:
           cat > payload.json <<EOF
           {
             "owner": "${{ github.repository_owner }}",
-            "repo": "${{ github.repository }}",
+            "repo": "${{ github.event.repository.name }}",
             "workflow_file": ".github/workflows/${{ github.workflow }}.yml",
             "ref": "${{ github.ref_name }}",
             "requested_by": "${{ github.actor }}",
