@@ -70,7 +70,7 @@ jobs:
             echo "Missing repo secret LOGIC_APP_URL"; exit 1
           fi
 
-          cat > payload.json <<EOF
+          cat > payload.json <<'EOF'
           {
             "owner": "${{ github.repository_owner }}",
             "repo": "${{ github.event.repository.name }}",
@@ -90,6 +90,7 @@ jobs:
             "port_context": "${{ inputs.port_context }}"
           }
           EOF
+          
 
 
           echo "Sending approval request to Logic App..."
