@@ -152,7 +152,6 @@ jobs:
           no-fail-on-empty-changeset: "1"
           parameter-overrides: >-
             BucketName=${{ env.BUCKET_NAME }},
-            AWSRegion=${{ inputs.aws_region }},
             VersioningEnabled=${{ inputs.versioning }},
             EncryptionType=${{ inputs.encryption }},
             KmsKeyId=${{ inputs.kms_key_id }}
