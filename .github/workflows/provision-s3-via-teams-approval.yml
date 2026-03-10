@@ -118,6 +118,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ inputs.aws_region }}
 
+      - name: Test AWS CFN Permissions
+        run: |
+          aws cloudformation list-stacks --region ${{ inputs.aws_region }}
+
       # ✅ REQUIRED — UNIQUE BUCKET + STACK NAME
              
       - name: Generate unique lowercase bucket name
