@@ -119,10 +119,12 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       # ✅ REQUIRED — UNIQUE BUCKET + STACK NAME
-      - name: Generate unique bucket name
+             
+      - name: Generate unique lowercase bucket name
         id: bucket
         run: |
-          echo "BUCKET_NAME=${{ inputs.bucket_name }}-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
+          LOWER_NAME=$(echo "${{ inputs.bucket_name }}" | tr '[:upper:]' '[:lower:]')
+          echo "BUCKET_NAME=${LOWER_NAME}-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_ENV
 
       - name: Prepare Tags for CloudFormation
         id: prepare-tags
